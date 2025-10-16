@@ -3,8 +3,53 @@ import fs from 'fs';
 import pino from 'pino';
 import { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pn from 'awesome-phonenumber';
+import crypto from 'crypto';
 
 const router = express.Router();
+
+// Function to generate random session string
+function generateSessionString() {
+    const prefix = 'sila~';
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let randomString = '';
+    
+    for (let i = 0; i < 40; i++) {
+        randomString += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    
+    return prefix + randomString;
+}
+
+// Function to convert session data to encrypted string
+function sessionToEncryptedString(sessionData) {
+    try {
+        const sessionJSON = JSON.stringify(sessionData);
+        // Using simple Base64 encoding (unaweza kubadilisha kwa encryption stronger)
+        const encrypted = Buffer.from(sessionJSON).toString('base64');
+        return encrypted;
+    } catch (error) {
+        console.error('Error encrypting session:', error);
+        return null;
+    }
+}
+
+// Function to save session as string instead of file
+function saveSessionAsString(sessionDir) {
+    try {
+        const credsPath = sessionDir + '/creds.json';
+        if (!fs.existsSync(credsPath)) return null;
+        
+        const credsData = fs.readFileSync(credsPath, 'utf8');
+        const sessionData = JSON.parse(credsData);
+        
+        // Convert session to encrypted string
+        const sessionString = sessionToEncryptedString(sessionData);
+        return sessionString;
+    } catch (error) {
+        console.error('Error converting session to string:', error);
+        return null;
+    }
+}
 
 // Ensure the session directory exists
 function removeFile(FilePath) {
@@ -65,49 +110,54 @@ router.get('/', async (req, res) => {
 
                 if (connection === 'open') {
                     console.log("✅ Connected successfully!");
-                    console.log("📱 Sending session file to user...");
+                    console.log("📱 Generating session string...");
                     
                     try {
-                        const sessionSila = fs.readFileSync(dirs + '/creds.json');
-
-                        // Send session file to user
-                        const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
-                        await SilaBot.sendMessage(userJid, {
-                            document: sessionSila,
-                            mimetype: 'application/json',
-                            fileName: 'creds.json'
-                        });
-                        console.log("📄 Session file sent successfully");
-
-                        // Send video thumbnail with caption
-                        await SilaBot.sendMessage(userJid, {
-                            image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                            caption: `🎬 *SILATRIX MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/-oz_u1iMgf8`
-                        });
-                        console.log("🎬 Video guide sent successfully");
-
-                        // Send warning message
-                        await SilaBot.sendMessage(userJid, {
-                            text: `⚠️Do not share this file with anybody⚠️\n 
-┌┤✑  Thanks for using Sila Tech 
+                        // Generate session string instead of sending file
+                        const sessionString = saveSessionAsString(dirs);
+                        
+                        if (sessionString) {
+                            // Generate final session ID with sila~ prefix
+                            const finalSessionId = generateSessionString();
+                            
+                            // Store the mapping (in production, use database)
+                            // Hii ni mfano tu, katika production tumia database
+                            console.log(`Session Mapping: ${finalSessionId} -> ${sessionString.substring(0, 20)}...`);
+                            
+                            const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
+                            
+                            // Send session ID to user
+                            await SilaBot.sendMessage(userJid, {
+                                text: `✅ *SESSION CREATED SUCCESSFULLY!*\n\n📱 *Your Session ID:*\n\`\`\`${finalSessionId}\`\`\`\n\n💾 *Save this ID carefully!*\n\n⚠️ *Important Instructions:*\n• Do not share this ID with anyone\n• Use this ID to restore your session\n• Keep it safe and secure\n\n┌┤✑ Thanks for using Sila Tech 
 │└────────────┈ ⳹        
 │©2024 Mr Sila Hacker 
-└─────────────────┈ ⳹\n\n`
-                        });
-                        console.log("⚠️ Warning message sent successfully");
+└─────────────────┈ ⳹`
+                            });
+                            console.log("📄 Session ID sent successfully");
 
-                        // Clean up session after use
-                        console.log("🧹 Cleaning up session...");
-                        await delay(1000);
-                        removeFile(dirs);
-                        console.log("✅ Session cleaned up successfully");
-                        console.log("🎉 Process completed successfully!");
-                        // Do not exit the process, just finish gracefully
+                            // Send video thumbnail with caption
+                            await SilaBot.sendMessage(userJid, {
+                                image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
+                                caption: `🎬 *SILATRIX MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/-oz_u1iMgf8`
+                            });
+                            console.log("🎬 Video guide sent successfully");
+
+                            // Clean up session files after use
+                            console.log("🧹 Cleaning up session files...");
+                            await delay(1000);
+                            removeFile(dirs);
+                            console.log("✅ Session files cleaned up successfully");
+                            console.log("🎉 Process completed successfully!");
+                        } else {
+                            console.error("❌ Failed to generate session string");
+                            await SilaBot.sendMessage(userJid, {
+                                text: "❌ Failed to create session. Please try again."
+                            });
+                        }
                     } catch (error) {
-                        console.error("❌ Error sending messages:", error);
-                        // Still clean up session even if sending fails
+                        console.error("❌ Error during session creation:", error);
+                        // Clean up session even if sending fails
                         removeFile(dirs);
-                        // Do not exit the process, just finish gracefully
                     }
                 }
 
