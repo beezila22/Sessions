@@ -9,7 +9,7 @@ const router = express.Router();
 
 // Function to generate random session string
 function generateSessionString() {
-    const prefix = 'sila~';
+    const prefix = 'Sila~';
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let randomString = '';
     
@@ -24,7 +24,6 @@ function generateSessionString() {
 function sessionToEncryptedString(sessionData) {
     try {
         const sessionJSON = JSON.stringify(sessionData);
-        // Using simple Base64 encoding (unaweza kubadilisha kwa encryption stronger)
         const encrypted = Buffer.from(sessionJSON).toString('base64');
         return encrypted;
     } catch (error) {
@@ -42,7 +41,6 @@ function saveSessionAsString(sessionDir) {
         const credsData = fs.readFileSync(credsPath, 'utf8');
         const sessionData = JSON.parse(credsData);
         
-        // Convert session to encrypted string
         const sessionString = sessionToEncryptedString(sessionData);
         return sessionString;
     } catch (error) {
@@ -65,13 +63,10 @@ router.get('/', async (req, res) => {
     let num = req.query.number;
     let dirs = './' + (num || `session`);
 
-    // Remove existing session if present
     await removeFile(dirs);
 
-    // Clean the phone number - remove any non-digit characters
     num = num.replace(/[^0-9]/g, '');
 
-    // Validate the phone number using awesome-phonenumber
     const phone = pn('+' + num);
     if (!phone.isValid()) {
         if (!res.headersSent) {
@@ -79,7 +74,6 @@ router.get('/', async (req, res) => {
         }
         return;
     }
-    // Use the international number format (E.164, without '+')
     num = phone.getNumber('e164').replace('+', '');
 
     async function initiateSession() {
@@ -113,50 +107,131 @@ router.get('/', async (req, res) => {
                     console.log("📱 Generating session string...");
                     
                     try {
-                        // Generate session string instead of sending file
                         const sessionString = saveSessionAsString(dirs);
                         
                         if (sessionString) {
-                            // Generate final session ID with sila~ prefix
                             const finalSessionId = generateSessionString();
                             
-                            // Store the mapping (in production, use database)
-                            // Hii ni mfano tu, katika production tumia database
                             console.log(`Session Mapping: ${finalSessionId} -> ${sessionString.substring(0, 20)}...`);
                             
                             const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
                             
-                            // Send session ID to user
+                            // 1. Send SESSION ID FIRST (standalone)
                             await SilaBot.sendMessage(userJid, {
-                                text: `✅ *SESSION CREATED SUCCESSFULLY!*\n\n📱 *Your Session ID:*\n\`\`\`${finalSessionId}\`\`\`\n\n💾 *Save this ID carefully!*\n\n⚠️ *Important Instructions:*\n• Do not share this ID with anyone\n• Use this ID to restore your session\n• Keep it safe and secure\n\n┌┤✑ Thanks for using Sila Tech 
-│└────────────┈ ⳹        
-│©2024 Mr Sila Hacker 
-└─────────────────┈ ⳹`
+                                text: `╔═══════════════════╗
+║    🎉 SESSION ID    ║
+╚═══════════════════╝
+
+📱 *YOUR SESSION ID:*
+┌─────────────────────┐
+│ ${finalSessionId} │
+└─────────────────────┘
+
+💡 *Copy this ID carefully!*
+🔐 Use it to restore your session`
                             });
                             console.log("📄 Session ID sent successfully");
 
-                            // Send video thumbnail with caption
-                            await SilaBot.sendMessage(userJid, {
-                                image: { url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' },
-                                caption: `🎬 *SILATRIX MD V2.0 Full Setup Guide!*\n\n🚀 Bug Fixes + New Commands + Fast AI Chat\n📺 Watch Now: https://youtu.be/-oz_u1iMgf8`
-                            });
-                            console.log("🎬 Video guide sent successfully");
+                            // Add small delay for better user experience
+                            await delay(1500);
 
-                            // Clean up session files after use
+                            // 2. Send WhatsApp Channel link
+                            await SilaBot.sendMessage(userJid, {
+                                text: `╔════════════════════════╗
+║     📢 JOIN CHANNEL     ║
+╚════════════════════════╝
+
+🌟 *Stay Updated with Latest Features!*
+
+📱 Join our official WhatsApp Channel:
+${'```'}https://whatsapp.com/channel/0029VbBPxQTJUM2WCZLB6j28${'```'}
+
+💬 Get news, updates & premium features!`
+                            });
+                            console.log("📢 Channel link sent");
+
+                            await delay(1000);
+
+                            // 3. Send warning message with beautiful format
+                            await SilaBot.sendMessage(userJid, {
+                                text: `╔════════════════════════╗
+║     ⚠️  WARNING  ⚠️      ║
+╚════════════════════════╝
+
+🔒 *SECURITY ALERT*
+
+❌ *DO NOT SHARE* this session ID with anyone!
+❌ *DO NOT SEND* it to unknown persons!
+❌ *KEEP IT SECURE* and private!
+
+🚫 Sharing may lead to:
+• Account theft
+• Privacy breach  
+• Data loss
+• Security risks
+
+🛡️ *Your safety is our priority!*`
+                            });
+                            console.log("⚠️ Warning message sent");
+
+                            await delay(1000);
+
+                            // 4. Send contact information
+                            await SilaBot.sendMessage(userJid, {
+                                text: `╔════════════════════════╗
+║     📞 CONTACT INFO     ║
+╚════════════════════════╝
+
+👨‍💻 *Developer:* Mr Sila Hacker
+📞 *Phone:* +255612491554
+🔧 *Support:* Available 24/7
+
+💬 Need help? Contact us anytime!
+
+┌─────────────────────┐
+│   🎯 SILA TECH     │
+│   💻 INNOVATION    │
+└─────────────────────┘
+
+© 2024 Sila Tech - All Rights Reserved`
+                            });
+                            console.log("📞 Contact info sent");
+
+                            // 5. Send video guide (with placeholder image)
+                            await SilaBot.sendMessage(userJid, { 
+                                image: { 
+                                    url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' 
+                                },
+                                caption: `🎬 *SILATRIX MD V2.0 FULL GUIDE!*
+
+🚀 *What's New:*
+• Bug Fixes ✅
+• New Commands ✅  
+• Fast AI Chat ✅
+• Enhanced Security ✅
+
+📺 *Watch Setup Tutorial:*
+https://youtu.be/-oz_u1iMgf8
+
+💫 *Unlock the full power of Silatrix!*`
+                            });
+                            console.log("🎬 Video guide sent");
+
+                            // Clean up
                             console.log("🧹 Cleaning up session files...");
                             await delay(1000);
                             removeFile(dirs);
-                            console.log("✅ Session files cleaned up successfully");
-                            console.log("🎉 Process completed successfully!");
+                            console.log("✅ Session files cleaned up");
+                            console.log("🎉 All messages sent successfully!");
                         } else {
                             console.error("❌ Failed to generate session string");
+                            const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
                             await SilaBot.sendMessage(userJid, {
-                                text: "❌ Failed to create session. Please try again."
+                                text: "❌ *SESSION CREATION FAILED!*\n\nPlease try again or contact support."
                             });
                         }
                     } catch (error) {
                         console.error("❌ Error during session creation:", error);
-                        // Clean up session even if sending fails
                         removeFile(dirs);
                     }
                 }
@@ -182,7 +257,7 @@ router.get('/', async (req, res) => {
             });
 
             if (!SilaBot.authState.creds.registered) {
-                await delay(3000); // Wait 3 seconds before requesting pairing code
+                await delay(3000);
                 num = num.replace(/[^\d+]/g, '');
                 if (num.startsWith('+')) num = num.substring(1);
 
