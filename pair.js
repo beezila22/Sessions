@@ -4,10 +4,52 @@ import pino from 'pino';
 import { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers, jidNormalizedUser, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pn from 'awesome-phonenumber';
 import crypto from 'crypto';
+import { Storage } from "megajs";
 
 const router = express.Router();
 
-// Function to generate random session string
+// Function to generate random ID for Mega storage
+function randomMegaId(length = 6, numberLength = 4) {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    const number = Math.floor(Math.random() * Math.pow(10, numberLength));
+    return `${result}${number}`;
+}
+
+// Function to upload credentials to Mega storage
+async function uploadCredsToMega(credsPath) {
+    try {
+        const storage = await new Storage({
+            email: 'techobed4@gmail.com',
+            password: 'Trippleo1802obed'
+        }).ready;
+        console.log('Mega storage initialized.');
+        
+        if (!fs.existsSync(credsPath)) {
+            throw new Error(`File not found: ${credsPath}`);
+        }
+        
+        const fileSize = fs.statSync(credsPath).size;
+        const uploadResult = await storage.upload({
+            name: `${randomMegaId()}.json`,
+            size: fileSize
+        }, fs.createReadStream(credsPath)).complete;
+        
+        console.log('Session successfully uploaded to Mega.');
+        const fileNode = storage.files[uploadResult.nodeId];
+        const megaUrl = await fileNode.link();
+        console.log(`Session Url: ${megaUrl}`);
+        return megaUrl;
+    } catch (error) {
+        console.error('Error uploading to Mega:', error);
+        throw error;
+    }
+}
+
+// Function to generate session string for bot hosting
 function generateSessionString() {
     const prefix = 'Sila~';
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -18,35 +60,6 @@ function generateSessionString() {
     }
     
     return prefix + randomString;
-}
-
-// Function to convert session data to encrypted string
-function sessionToEncryptedString(sessionData) {
-    try {
-        const sessionJSON = JSON.stringify(sessionData);
-        const encrypted = Buffer.from(sessionJSON).toString('base64');
-        return encrypted;
-    } catch (error) {
-        console.error('Error encrypting session:', error);
-        return null;
-    }
-}
-
-// Function to save session as string instead of file
-function saveSessionAsString(sessionDir) {
-    try {
-        const credsPath = sessionDir + '/creds.json';
-        if (!fs.existsSync(credsPath)) return null;
-        
-        const credsData = fs.readFileSync(credsPath, 'utf8');
-        const sessionData = JSON.parse(credsData);
-        
-        const sessionString = sessionToEncryptedString(sessionData);
-        return sessionString;
-    } catch (error) {
-        console.error('Error converting session to string:', error);
-        return null;
-    }
 }
 
 // Ensure the session directory exists
@@ -61,7 +74,8 @@ function removeFile(FilePath) {
 
 router.get('/', async (req, res) => {
     let num = req.query.number;
-    let dirs = './' + (num || `session`);
+    const sessionId = generateSessionString();
+    let dirs = './temp/' + sessionId;
 
     await removeFile(dirs);
 
@@ -104,127 +118,121 @@ router.get('/', async (req, res) => {
 
                 if (connection === 'open') {
                     console.log("✅ Connected successfully!");
-                    console.log("📱 Generating session string...");
+                    console.log("📱 Uploading session to Mega storage...");
                     
                     try {
-                        const sessionString = saveSessionAsString(dirs);
+                        const credsPath = dirs + '/creds.json';
                         
-                        if (sessionString) {
-                            const finalSessionId = generateSessionString();
+                        if (fs.existsSync(credsPath)) {
+                            // Upload session to Mega
+                            const megaUrl = await uploadCredsToMega(credsPath);
                             
-                            console.log(`Session Mapping: ${finalSessionId} -> ${sessionString.substring(0, 20)}...`);
+                            // Generate Session ID for bot hosting
+                            const hostingSessionId = megaUrl.includes("https://mega.nz/file/")
+                                ? 'http://session.sila.xibs.space/' + megaUrl.split("https://mega.nz/file/")[1]
+                                : megaUrl;
+
+                            console.log(`🎯 Session ID for Hosting: ${hostingSessionId}`);
                             
                             const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
                             
-                            // 1. Send SESSION ID FIRST (standalone)
-                            await SilaBot.sendMessage(userJid, {
-                                text: `╔═══════════════════╗
-║    🎉 SESSION ID    ║
-╚═══════════════════╝
+                            // 1. Send SESSION ID for bot hosting
+                            const sidMsg = await SilaBot.sendMessage(userJid, {
+                                text: `╔════════════════════════╗
+║     🚀 BOT SESSION ID     ║
+╚════════════════════════╝
 
-📱 *YOUR SESSION ID:*
-┌─────────────────────┐
-│ ${finalSessionId} │
-└─────────────────────┘
+🔐 *YOUR BOT SESSION ID:*
+┌─────────────────────────┐
+│ ${hostingSessionId} │
+└─────────────────────────┘
 
-💡 *Copy this ID carefully!*
-🔐 Use it to restore your session`
+💻 *Use this to host your bot!*
+📝 Copy and save it securely!`
                             });
-                            console.log("📄 Session ID sent successfully");
+                            console.log("📄 Session ID for hosting sent successfully");
 
-                            // Add small delay for better user experience
                             await delay(1500);
 
-                            // 2. Send WhatsApp Channel link
+                            // 2. Send deployment instructions
                             await SilaBot.sendMessage(userJid, {
                                 text: `╔════════════════════════╗
-║     📢 JOIN CHANNEL     ║
+║     🎯 DEPLOYMENT GUIDE    ║
 ╚════════════════════════╝
 
-🌟 *Stay Updated with Latest Features!*
+🚀 *How to Use Your Session ID:*
 
-📱 Join our official WhatsApp Channel:
-${'```'}https://whatsapp.com/channel/0029VbBPxQTJUM2WCZLB6j28${'```'}
+1. *Go to your bot hosting platform*
+2. *Paste the Session ID in config*
+3. *Start your bot deployment*
+4. *Enjoy your WhatsApp bot!*
 
-💬 Get news, updates & premium features!`
-                            });
-                            console.log("📢 Channel link sent");
+📖 *Full Tutorial:* 
+${'```'}https://youtu.be/-oz_u1iMgf8${'```'}
+
+💫 *Your bot will be ready in minutes!*`
+                            }, { quoted: sidMsg });
+                            console.log("🎯 Deployment guide sent");
 
                             await delay(1000);
 
-                            // 3. Send warning message with beautiful format
+                            // 3. Send important warnings
                             await SilaBot.sendMessage(userJid, {
                                 text: `╔════════════════════════╗
-║     ⚠️  WARNING  ⚠️      ║
+║     ⚠️ SECURITY ALERT     ║
 ╚════════════════════════╝
 
-🔒 *SECURITY ALERT*
+🔒 *PROTECT YOUR SESSION ID!*
 
-❌ *DO NOT SHARE* this session ID with anyone!
-❌ *DO NOT SEND* it to unknown persons!
-❌ *KEEP IT SECURE* and private!
+❌ *NEVER SHARE* with anyone!
+❌ *DON'T POST* publicly!
+❌ *KEEP PRIVATE* and secure!
 
-🚫 Sharing may lead to:
-• Account theft
-• Privacy breach  
-• Data loss
-• Security risks
+🚫 *Risks of sharing:*
+• Bot takeover
+• Data theft
+• Privacy breach
+• Account misuse
 
-🛡️ *Your safety is our priority!*`
+🛡️ *Your security is important!*`
                             });
-                            console.log("⚠️ Warning message sent");
+                            console.log("⚠️ Security warning sent");
 
                             await delay(1000);
 
-                            // 4. Send contact information
+                            // 4. Send support information
                             await SilaBot.sendMessage(userJid, {
                                 text: `╔════════════════════════╗
-║     📞 CONTACT INFO     ║
+║     📞 SUPPORT & HELP     ║
 ╚════════════════════════╝
 
 👨‍💻 *Developer:* Mr Sila Hacker
 📞 *Phone:* +255612491554
-🔧 *Support:* Available 24/7
+🕒 *Support:* 24/7 Available
 
-💬 Need help? Contact us anytime!
+🌐 *WhatsApp Channel:*
+${'```'}https://whatsapp.com/channel/0029VbBPxQTJUM2WCZLB6j28${'```'}
+
+💬 *Need help? Contact us anytime!*
 
 ┌─────────────────────┐
 │   🎯 SILA TECH     │
-│   💻 INNOVATION    │
-└─────────────────────┘
-
-© 2024 Sila Tech - All Rights Reserved`
+│   🔥 INNOVATION    │
+└─────────────────────┘`
                             });
-                            console.log("📞 Contact info sent");
+                            console.log("📞 Support info sent");
 
-                            // 5. Send video guide (with placeholder image)
-                            await SilaBot.sendMessage(userJid, { 
-                                image: { 
-                                    url: 'https://img.youtube.com/vi/-oz_u1iMgf8/maxresdefault.jpg' 
-                                },
-                                caption: `🎬 *SILATRIX MD V2.0 FULL GUIDE!*
-
-🚀 *What's New:*
-• Bug Fixes ✅
-• New Commands ✅  
-• Fast AI Chat ✅
-• Enhanced Security ✅
-
-📺 *Watch Setup Tutorial:*
-https://youtu.be/-oz_u1iMgf8
-
-💫 *Unlock the full power of Silatrix!*`
-                            });
-                            console.log("🎬 Video guide sent");
-
-                            // Clean up
-                            console.log("🧹 Cleaning up session files...");
+                            // Clean up temporary files
+                            console.log("🧹 Cleaning up temporary files...");
                             await delay(1000);
                             removeFile(dirs);
-                            console.log("✅ Session files cleaned up");
-                            console.log("🎉 All messages sent successfully!");
+                            console.log("✅ Temporary files cleaned up");
+                            
+                            // Close connection
+                            await SilaBot.ws.close();
+                            console.log("🎉 All messages sent successfully! Connection closed.");
                         } else {
-                            console.error("❌ Failed to generate session string");
+                            console.error("❌ Credentials file not found");
                             const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
                             await SilaBot.sendMessage(userJid, {
                                 text: "❌ *SESSION CREATION FAILED!*\n\nPlease try again or contact support."
